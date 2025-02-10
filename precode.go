@@ -16,14 +16,14 @@ import (
 func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 	// 1. Функция Generator
 	// ...
-	var num int64
+	var num int64 = 1
 	defer close(ch)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			atomic.AddInt64(&num, 1)
+			num++
 			ch <- num
 			fn(num)
 		}
@@ -34,16 +34,11 @@ func Generator(ctx context.Context, ch chan<- int64, fn func(int64)) {
 func Worker(in <-chan int64, out chan<- int64) {
 	// 2. Функция Worker
 	// ...
-	for {
-		number, ok := <-in
-		if !ok {
-			close(out)
-			return
-		}
+	for number := range in {
 		out <- number
 		time.Sleep(1 * time.Millisecond)
 	}
-
+	close(out)
 }
 
 func main() {
@@ -60,8 +55,8 @@ func main() {
 
 	// генерируем числа, считая параллельно их количество и сумму
 	go Generator(ctx, chIn, func(i int64) {
-		inputSum += i
-		inputCount++
+		atomic.AddInt64(&inputSum, i)
+		atomic.AddInt64(&inputCount, 1)
 	})
 
 	const NumOut = 5 // количество обрабатывающих горутин и каналов
@@ -86,9 +81,10 @@ func main() {
 		wg.Add(1)
 		go func(in <-chan int64, i int64) {
 			defer wg.Done()
-			numOut := <-in
-			chOut <- numOut
-			atomic.AddInt64(&amounts[i], 1)
+			for numOut := range in {
+				chOut <- numOut
+				amounts[i]++
+			}
 		}(ch, int64(i))
 	}
 
